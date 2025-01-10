@@ -5,12 +5,11 @@ import path from "path";
 import multer from "multer";
 import transactionRoutes from "./routes/transaction.routes";
 import { uploadCSVController } from "./controllers/transaction.controller";
-import mikroConfig from "./mikro-orm.config";
-import { MikroORM } from "@mikro-orm/postgresql";
-import { Transaction } from "./entities/Transaction";
+// import mikroConfig from "./mikro-orm.config";
+// import { MikroORM } from "@mikro-orm/postgresql";
+// import { Transaction } from "./entities/Transaction";
 
 const main = async () => {
-  console.log("rlksfnglkfsg");
   const app = express();
   app.use(express.json());
   app.use(cors());

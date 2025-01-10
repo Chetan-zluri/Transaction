@@ -68,12 +68,15 @@ export const uploadCSVController = asyncHandler(
       .on("data", (row) => rows.push(row))
       .on("end", async () => {
         try {
-          const transactions = await processCSV(rows);
+          const { transactions, invalidRows } = await processCSV(rows);
           fs.unlinkSync(filePath); // Clean up uploaded file
-          res
-            .status(200)
-            .json({ message: "CSV file processed successfully", transactions });
+          res.status(200).json({
+            message: "CSV file processed successfully",
+            transactions,
+            invalidRows, // Include invalid rows for reference (optional)
+          });
         } catch (error) {
+          fs.unlinkSync(filePath); // Ensure cleanup in case of error
           res.status(500).json({
             message: `Error processing transactions: ${
               error instanceof Error ? error.message : String(error)
@@ -82,7 +85,7 @@ export const uploadCSVController = asyncHandler(
         }
       })
       .on("error", (error) => {
-        fs.unlinkSync(filePath);
+        fs.unlinkSync(filePath); // Ensure cleanup in case of error
         res.status(500).json({ message: "Error processing CSV file", error });
       });
   }

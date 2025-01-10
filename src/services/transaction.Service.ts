@@ -1,8 +1,10 @@
 import { MikroORM } from "@mikro-orm/postgresql";
 import { Transaction } from "../entities/Transaction";
+import config from "../mikro-orm.config";
+import papa from "papaparse";
 export const getAllTransactions = async () => {
-  const orm = MikroORM.init();
-  const em = (await orm).em;
+  const orm = MikroORM.init(config);
+  const em = (await orm).em.fork();
   return em.find(
     Transaction,
     { deleted: false },
@@ -10,8 +12,8 @@ export const getAllTransactions = async () => {
   );
 };
 export const addTransaction = async (data: Partial<Transaction>) => {
-  const orm = MikroORM.init();
-  const em = (await orm).em;
+  const orm = MikroORM.init(config);
+  const em = (await orm).em.fork();
   if (!data.date || !data.description || !data.amount || !data.Currency) {
     throw new Error(
       "All fields (date, description, amount, Currency) are required."
@@ -38,8 +40,8 @@ export const updateTransaction = async (
   id: number,
   data: Partial<Transaction>
 ) => {
-  const orm = MikroORM.init();
-  const em = (await orm).em;
+  const orm = MikroORM.init(config);
+  const em = (await orm).em.fork();
   const transaction = await em.findOne(Transaction, { id, deleted: false });
   if (!transaction) {
     throw new Error("Transaction not found or is deleted");
@@ -59,8 +61,8 @@ export const updateTransaction = async (
   return transaction;
 };
 export const deleteTransaction = async (id: number) => {
-  const orm = MikroORM.init();
-  const em = (await orm).em;
+  const orm = MikroORM.init(config);
+  const em = (await orm).em.fork();
   const transaction = await em.findOne(Transaction, { id });
   if (!transaction) {
     throw new Error("Transaction not found");
@@ -69,18 +71,37 @@ export const deleteTransaction = async (id: number) => {
   await em.flush();
   return transaction;
 };
+
 export const processCSV = async (rows: any[]) => {
-  const orm = MikroORM.init();
-  const em = (await orm).em;
+  const orm = MikroORM.init(config);
+  const em = (await orm).em.fork();
   const transactions: Transaction[] = [];
+  const invalidRows: any[] = [];
+
   for (const row of rows) {
     const { date, description, amount, Currency } = row;
+
+    // Validate row data
+    if (
+      !date ||
+      isNaN(Date.parse(date)) ||
+      !description ||
+      !amount ||
+      isNaN(parseFloat(amount)) ||
+      !Currency
+    ) {
+      invalidRows.push(row); // Log invalid rows for debugging/reporting
+      continue; // Skip invalid rows
+    }
+
+    // Check for duplicates
     const duplicate = await em.findOne(Transaction, { date, description });
     if (duplicate) {
-      throw new Error(
-        `Duplicate transaction detected: ${description} on ${date}`
-      );
+      invalidRows.push(row); // Log duplicates as invalid
+      continue;
     }
+
+    // Create valid transaction
     transactions.push(
       em.create(Transaction, {
         date: new Date(date),
@@ -91,6 +112,10 @@ export const processCSV = async (rows: any[]) => {
       })
     );
   }
+
+  // Save valid transactions to the database
   await em.persistAndFlush(transactions);
-  return transactions;
+
+  // Return results and invalid rows for reference
+  return { transactions, invalidRows };
 };
