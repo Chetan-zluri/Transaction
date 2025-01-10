@@ -1,6 +1,4 @@
 import { Request, Response, NextFunction } from "express";
-import { MikroORM } from "@mikro-orm/postgresql";
-import { Transaction } from "../entities/Transaction";
 import csvParser from "csv-parser";
 import fs from "fs";
 import { asyncHandler } from "../utils/asyncHandler";
@@ -11,7 +9,6 @@ import {
   deleteTransaction,
   processCSV,
 } from "../services/transaction.Service";
-const orm = MikroORM.init();
 
 export const getAllTransactionsController = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {

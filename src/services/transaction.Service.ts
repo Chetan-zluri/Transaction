@@ -1,7 +1,7 @@
 import { MikroORM } from "@mikro-orm/postgresql";
 import { Transaction } from "../entities/Transaction";
-const orm = MikroORM.init();
 export const getAllTransactions = async () => {
+  const orm = MikroORM.init();
   const em = (await orm).em;
   return em.find(
     Transaction,
@@ -10,6 +10,7 @@ export const getAllTransactions = async () => {
   );
 };
 export const addTransaction = async (data: Partial<Transaction>) => {
+  const orm = MikroORM.init();
   const em = (await orm).em;
   if (!data.date || !data.description || !data.amount || !data.Currency) {
     throw new Error(
@@ -37,6 +38,7 @@ export const updateTransaction = async (
   id: number,
   data: Partial<Transaction>
 ) => {
+  const orm = MikroORM.init();
   const em = (await orm).em;
   const transaction = await em.findOne(Transaction, { id, deleted: false });
   if (!transaction) {
@@ -57,6 +59,7 @@ export const updateTransaction = async (
   return transaction;
 };
 export const deleteTransaction = async (id: number) => {
+  const orm = MikroORM.init();
   const em = (await orm).em;
   const transaction = await em.findOne(Transaction, { id });
   if (!transaction) {
@@ -67,6 +70,7 @@ export const deleteTransaction = async (id: number) => {
   return transaction;
 };
 export const processCSV = async (rows: any[]) => {
+  const orm = MikroORM.init();
   const em = (await orm).em;
   const transactions: Transaction[] = [];
   for (const row of rows) {
