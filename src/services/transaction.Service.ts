@@ -1,7 +1,6 @@
 import { MikroORM } from "@mikro-orm/postgresql";
 import { Transaction } from "../entities/Transaction";
 import config from "../mikro-orm.config";
-import papa from "papaparse";
 export const getAllTransactions = async () => {
   const orm = MikroORM.init(config);
   const em = (await orm).em.fork();
@@ -43,7 +42,7 @@ export const updateTransaction = async (
   const orm = MikroORM.init(config);
   const em = (await orm).em.fork();
   const transaction = await em.findOne(Transaction, { id, deleted: false });
-  if (!transaction) {
+  if (!transaction || transaction.deleted) {
     throw new Error("Transaction not found or is deleted");
   }
   const duplicate = await em.findOne(Transaction, {
@@ -57,7 +56,7 @@ export const updateTransaction = async (
   transaction.description = data.description || transaction.description;
   transaction.amount = data.amount || transaction.amount;
   transaction.Currency = data.Currency || transaction.Currency;
-  await em.flush();
+  await em.persist(transaction).flush();
   return transaction;
 };
 export const deleteTransaction = async (id: number) => {
@@ -79,9 +78,8 @@ export const processCSV = async (rows: any[]) => {
   const invalidRows: any[] = [];
 
   for (const row of rows) {
-    const { date, description, amount, Currency } = row;
+    const [date, description, amount, Currency] = row;
 
-    // Validate row data
     if (
       !date ||
       isNaN(Date.parse(date)) ||
@@ -90,18 +88,16 @@ export const processCSV = async (rows: any[]) => {
       isNaN(parseFloat(amount)) ||
       !Currency
     ) {
-      invalidRows.push(row); // Log invalid rows for debugging/reporting
-      continue; // Skip invalid rows
-    }
-
-    // Check for duplicates
-    const duplicate = await em.findOne(Transaction, { date, description });
-    if (duplicate) {
-      invalidRows.push(row); // Log duplicates as invalid
+      invalidRows.push(row);
       continue;
     }
 
-    // Create valid transaction
+    const duplicate = await em.findOne(Transaction, { date, description });
+    if (duplicate) {
+      invalidRows.push(row);
+      continue;
+    }
+
     transactions.push(
       em.create(Transaction, {
         date: new Date(date),
@@ -113,9 +109,7 @@ export const processCSV = async (rows: any[]) => {
     );
   }
 
-  // Save valid transactions to the database
   await em.persistAndFlush(transactions);
 
-  // Return results and invalid rows for reference
   return { transactions, invalidRows };
 };

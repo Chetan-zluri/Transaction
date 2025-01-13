@@ -8,7 +8,6 @@ import { uploadCSVController } from "./controllers/transaction.controller";
 // import mikroConfig from "./mikro-orm.config";
 // import { MikroORM } from "@mikro-orm/postgresql";
 // import { Transaction } from "./entities/Transaction";
-
 const main = async () => {
   const app = express();
   app.use(express.json());

@@ -11,8 +11,8 @@ const router = Router();
 
 router.get("/", getAllTransactionsController);
 router.post("/", addTransactionController);
-router.put("/:id", updateTransactionController);
-router.delete("/:id", deleteTransactionController);
+router.put("/update/:id", updateTransactionController);
+router.delete("/delete/:id", deleteTransactionController);
 router.post("/upload", uploadCSVController);
 
 export default router;
