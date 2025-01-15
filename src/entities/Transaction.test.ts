@@ -27,8 +27,6 @@ describe("Transaction Entity", () => {
       if (!transaction.Currency || transaction.Currency.trim() === "") {
         throw new Error("Field 'Currency' is required.");
       }
-    }).toThrow(
-      "Field 'date' is required and must be a valid Date." // Adjusted to check one error at a time
-    );
+    }).toThrow("Field 'date' is required and must be a valid Date.");
   });
 });

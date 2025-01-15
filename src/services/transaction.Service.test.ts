@@ -1,137 +1,277 @@
-// import { MikroORM } from "@mikro-orm/postgresql";
-// import { Transaction } from "../entities/Transaction";
-// import * as transactionService from "./transaction.Service"; // Adjust the path
-// import { mockResponse, mockRequest } from "jest-mock-express";
-// import { Request, Response } from "express";
+import { MikroORM, EntityManager } from "@mikro-orm/postgresql";
+import { Transaction } from "../entities/Transaction";
+import config from "../mikro-orm.config";
+import {
+  getAllTransactions,
+  addTransaction,
+  updateTransaction,
+  deleteTransaction,
+  processCSV,
+} from "../services/transaction.Service";
 
-// // Mock MikroORM and entities
-// jest.mock("@mikro-orm/postgresql");
+jest.mock("@mikro-orm/postgresql");
+jest.mock("../mikro-orm.config");
 
-// describe("Transaction Service", () => {
-//   let mockTransactions: Transaction[];
-//   let em: any; // Mocked EntityManager
+describe("Transaction Services", () => {
+  let ormMock: Partial<MikroORM>;
+  let emMock: Partial<EntityManager>;
 
-//   beforeEach(() => {
-//     mockTransactions = [
-//       new Transaction({
-//         date: new Date(),
-//         description: "Test Transaction",
-//         amount: 100,
-//         Currency: "USD",
-//         deleted: false,
-//       }),
-//     ];
+  beforeEach(() => {
+    emMock = {
+      find: jest.fn(),
+      findOne: jest.fn(),
+      create: jest.fn(),
+      nativeDelete: jest.fn(),
+      persistAndFlush: jest.fn(),
+      flush: jest.fn(),
+      fork: jest.fn().mockReturnThis(), // mockReturnThis() preserves the type
+    };
 
-//     em = {
-//       find: jest.fn(),
-//       create: jest.fn(),
-//       persist: jest.fn(),
-//       persistAndFlush: jest.fn(),
-//       flush: jest.fn(),
-//       findOne: jest.fn(),
-//     };
-//   });
+    ormMock = {
+      em: emMock as EntityManager,
+    };
 
-//   it("should fetch all transactions", async () => {
-//     // Mock the `find` method to return the mock transactions
-//     em.find.mockResolvedValue(mockTransactions);
+    (MikroORM.init as jest.Mock).mockResolvedValue(ormMock as MikroORM);
+  });
 
-//     // Call the service function
-//     const result = await transactionService.getAllTransactions(em);
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+  it("should get all transactions with pagination", async () => {
+    const mockTransactions = [
+      { id: 1, description: "Test Transaction", deleted: false },
+    ];
 
-//     expect(result).toEqual(mockTransactions);
-//     expect(em.find).toHaveBeenCalledWith(
-//       Transaction,
-//       { deleted: false },
-//       { orderBy: { date: "DESC" } }
-//     );
-//   });
+    (emMock.find as jest.Mock).mockResolvedValue(mockTransactions);
 
-//   it("should add a new transaction", async () => {
-//     // Mock the `findOne` method to return null (indicating no duplicate)
-//     em.findOne.mockResolvedValue(null);
+    const page = 1;
+    const limit = 50;
+    const transactions = await getAllTransactions(page, limit);
 
-//     const newTransactionData = {
-//       date: new Date(),
-//       description: "New Transaction",
-//       amount: 50,
-//       Currency: "USD",
-//     };
+    expect(transactions).toEqual(mockTransactions);
+    expect(emMock.find).toHaveBeenCalledWith(
+      Transaction,
+      { deleted: false },
+      {
+        orderBy: { date: "DESC" },
+        limit,
+        offset: 0,
+      }
+    );
+  });
 
-//     // Mock the `create` and `persistAndFlush` methods
-//     em.create.mockReturnValue(mockTransactions[0]);
-//     em.persistAndFlush.mockResolvedValue(undefined);
+  it("should handle errors gracefully", async () => {
+    (emMock.find as jest.Mock).mockRejectedValue(new Error("Database error"));
+    const page = 1;
+    const limit = 50;
+    await expect(getAllTransactions(page, limit)).rejects.toThrow(
+      "Database error"
+    );
+  });
+  it("should add a new transaction", async () => {
+    (emMock.findOne as jest.Mock).mockResolvedValue(null);
+    (emMock.create as jest.Mock).mockReturnValue({
+      id: 1,
+      description: "New Transaction",
+      deleted: false,
+    });
+    (emMock.persistAndFlush as jest.Mock).mockResolvedValue(null);
 
-//     // Call the service function
-//     const result = await transactionService.addTransaction(
-//       newTransactionData,
-//       em
-//     );
+    const transaction = await addTransaction({
+      date: new Date("2022-01-01"),
+      description: "New Transaction",
+      amount: 100,
+      Currency: "USD",
+      deleted: false,
+    });
 
-//     expect(result).toHaveProperty("id");
-//     expect(em.create).toHaveBeenCalledWith(Transaction, {
-//       ...newTransactionData,
-//       deleted: false,
-//     });
-//   });
+    expect(transaction).toEqual({
+      id: 1,
+      description: "New Transaction",
+      deleted: false,
+    });
+    expect(emMock.create).toHaveBeenCalledWith(Transaction, {
+      date: new Date("2022-01-01"),
+      description: "New Transaction",
+      amount: 100,
+      Currency: "USD",
+      deleted: false,
+    });
+    expect(emMock.persistAndFlush).toHaveBeenCalledWith(transaction);
+  });
 
-//   it("should update a transaction", async () => {
-//     const updatedData = { description: "Updated Transaction", amount: 200 };
+  it("should throw an error if required fields are missing in addTransaction", async () => {
+    await expect(
+      addTransaction({ description: "Missing fields" })
+    ).rejects.toThrow(
+      "All fields (date, description, amount, Currency) are required."
+    );
+  });
 
-//     // Mock findOne to return the existing transaction
-//     em.findOne.mockResolvedValue(mockTransactions[0]);
+  it("should throw an error if transaction already exists in addTransaction", async () => {
+    (emMock.findOne as jest.Mock).mockResolvedValue({});
+    await expect(
+      addTransaction({
+        date: new Date("2022-01-01"),
+        description: "Existing Transaction",
+        amount: 100,
+        Currency: "USD",
+        deleted: false,
+      })
+    ).rejects.toThrow("Transaction already exists");
+  });
 
-//     // Mock persist to resolve without errors
-//     em.persist.mockResolvedValue(undefined);
+  it("should update a transaction", async () => {
+    const existingTransaction: Partial<Transaction> = {
+      id: 1,
+      description: "Existing Transaction",
+      date: new Date("2022-01-01"),
+      amount: 100,
+      Currency: "USD",
+      deleted: false,
+    };
+    (emMock.findOne as jest.Mock).mockResolvedValueOnce(existingTransaction);
+    (emMock.findOne as jest.Mock).mockResolvedValueOnce(null);
+    (emMock.persistAndFlush as jest.Mock).mockResolvedValue(null);
 
-//     // Call the service function
-//     const result = await transactionService.updateTransaction(
-//       1,
-//       updatedData,
-//       em
-//     );
+    const updatedTransaction = await updateTransaction(1, {
+      date: new Date("2023-01-01"),
+      description: "Updated Transaction",
+      amount: 200,
+      Currency: "EUR",
+    });
 
-//     expect(result.description).toBe(updatedData.description);
-//     expect(result.amount).toBe(updatedData.amount);
-//   });
+    expect(updatedTransaction).toEqual(existingTransaction);
+    expect(emMock.findOne).toHaveBeenCalledWith(Transaction, {
+      date: new Date("2023-01-01"),
+      description: "Updated Transaction",
+      amount: 200,
+      Currency: "EUR",
+    });
+    expect(emMock.persistAndFlush).toHaveBeenCalledWith(existingTransaction);
+    expect(existingTransaction.date).toEqual(new Date("2023-01-01"));
+    expect(existingTransaction.description).toEqual("Updated Transaction");
+    expect(existingTransaction.amount).toEqual(200);
+    expect(existingTransaction.Currency).toEqual("EUR");
+  });
 
-//   it("should delete a transaction", async () => {
-//     // Mock findOne to return the existing transaction
-//     em.findOne.mockResolvedValue(mockTransactions[0]);
+  it("should throw an error if transaction is not found or is deleted in updateTransaction", async () => {
+    (emMock.findOne as jest.Mock).mockResolvedValue(null);
+    await expect(updateTransaction(1, {})).rejects.toThrow(
+      "Transaction not found or is deleted"
+    );
+  });
 
-//     // Mock flush to resolve without errors
-//     em.flush.mockResolvedValue(undefined);
+  it("should throw an error if duplicate transaction exists in updateTransaction", async () => {
+    const existingTransaction: Partial<Transaction> = {
+      id: 1,
+      description: "Existing Transaction",
+      date: new Date("2022-01-01"),
+      amount: 100,
+      Currency: "USD",
+      deleted: false,
+    };
+    const duplicateTransaction: Partial<Transaction> = {
+      id: 2,
+      description: "Duplicate Transaction",
+      date: new Date("2022-01-01"),
+      amount: 100,
+      Currency: "USD",
+      deleted: false,
+    };
+    (emMock.findOne as jest.Mock)
+      .mockResolvedValueOnce(existingTransaction)
+      .mockResolvedValueOnce(duplicateTransaction);
+    await expect(
+      updateTransaction(1, {
+        date: new Date("2022-01-01"),
+        description: "Duplicate Transaction",
+        amount: 100,
+        Currency: "USD",
+      })
+    ).rejects.toThrow("Transaction already exists with the same data");
+  });
 
-//     // Call the service function
-//     const result = await transactionService.deleteTransaction(1, em);
+  it("should delete a transaction", async () => {
+    const existingTransaction: Partial<Transaction> = {
+      id: 1,
+      description: "Existing Transaction",
+      deleted: false,
+    };
+    (emMock.findOne as jest.Mock).mockResolvedValueOnce(existingTransaction);
+    (emMock.flush as jest.Mock).mockResolvedValue(null);
 
-//     expect(result.deleted).toBe(true);
-//     expect(em.flush).toHaveBeenCalled();
-//   });
+    const result = await deleteTransaction(1);
 
-//   it("should process CSV and add valid transactions", async () => {
-//     const rows = [
-//       ["2025-01-01", "Valid Transaction", "100", "USD"],
-//       ["2025-01-02", "Duplicate Transaction", "150", "USD"], // Assume duplicate logic is handled
-//     ];
+    expect(result).toEqual(existingTransaction);
+    expect(existingTransaction.deleted).toBe(true);
+    expect(emMock.flush).toHaveBeenCalled();
+  });
 
-//     // Mock the findOne to return null for valid row and mock existing duplicate row
-//     em.findOne
-//       .mockResolvedValueOnce(null)
-//       .mockResolvedValueOnce(mockTransactions[0]);
+  it("should throw an error if transaction is not found in deleteTransaction", async () => {
+    (emMock.findOne as jest.Mock).mockResolvedValue(null);
+    await expect(deleteTransaction(1)).rejects.toThrow("Transaction not found");
+  });
 
-//     // Mock persistAndFlush to resolve without errors
-//     em.persistAndFlush.mockResolvedValue(undefined);
+  // it("should delete all rows from the Transaction entity", async () => {
+  //   await deleteRowsService();
+  //   expect(MikroORM.init).toHaveBeenCalledWith(config);
+  //   expect(emMock.nativeDelete).toHaveBeenCalledWith(Transaction, {});
+  // });
 
-//     // Call the service function
-//     const { transactions, invalidRows } = await transactionService.processCSV(
-//       rows,
-//       em
-//     );
+  it("should process a CSV file", async () => {
+    (emMock.findOne as jest.Mock).mockResolvedValue(null);
+    (emMock.create as jest.Mock).mockReturnValue({
+      id: 1,
+      description: "CSV Transaction",
+      deleted: false,
+    });
+    (emMock.persistAndFlush as jest.Mock).mockResolvedValue(null);
 
-//     // Assert valid transaction processing and invalid row handling
-//     expect(transactions).toHaveLength(1);
-//     expect(invalidRows).toHaveLength(1);
-//     expect(em.persistAndFlush).toHaveBeenCalled();
-//   });
-// });
+    const rows = [["2022-01-01", "CSV Transaction", "100", "USD"]];
+    const transactions = await processCSV(rows);
+
+    expect(transactions).toEqual([
+      { id: 1, description: "CSV Transaction", deleted: false },
+    ]);
+  });
+
+  it("should batch insert transactions when batch size is reached", async () => {
+    const rows = Array.from({ length: 2000 }, (_, i) => [
+      "2022-01-01",
+      `Transaction ${i}`,
+      "100",
+      "USD",
+    ]);
+
+    (emMock.findOne as jest.Mock).mockResolvedValue(null);
+    (emMock.create as jest.Mock).mockImplementation((entity) => entity);
+    (emMock.persistAndFlush as jest.Mock).mockResolvedValue(null);
+
+    const transactions = await processCSV(rows);
+
+    expect(transactions.length).toBe(0);
+    expect(emMock.persistAndFlush).toHaveBeenCalledTimes(20); // Called twice for 2000 rows with BATCH_SIZE = 1000
+  });
+
+  it("should add invalid rows to invalidRows array in processCSV", async () => {
+    const rows = [
+      ["Invalid Date", "CSV Transaction", "100", "USD"],
+      ["2022-01-01", "CSV Transaction", "Invalid Amount", "USD"],
+    ];
+    const transactions = await processCSV(rows);
+
+    expect(transactions).toEqual([]);
+  });
+
+  it("should add duplicate rows to invalidRows array in processCSV", async () => {
+    const rows = [
+      ["2022-01-01", "Duplicate Transaction", "100", "USD"],
+      ["2022-01-01", "Duplicate Transaction", "100", "USD"],
+    ];
+    (emMock.findOne as jest.Mock).mockResolvedValueOnce({});
+    const transactions = await processCSV(rows);
+
+    expect(transactions).toEqual([]);
+  });
+});

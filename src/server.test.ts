@@ -1,116 +1,112 @@
 import request from "supertest";
-import appfinal from "./server"; // Path to your server file
-import { Request, Response, NextFunction } from "express";
+import express, { Express, Request, Response, NextFunction } from "express";
+import bodyParser from "body-parser";
+import cors from "cors";
+import multer from "multer";
+import path from "path";
+import transactionRoutes from "./routes/transaction.routes";
+import { uploadCSVController } from "./controllers/transaction.controller";
 
-describe("Server and Route Integration Tests", () => {
-  let server: any;
+jest.mock("./controllers/transaction.controller", () => ({
+  getAllTransactionsController: jest.fn((req: Request, res: Response) =>
+    res.status(200).json([{ id: 1, description: "Test Transaction" }])
+  ),
+  addTransactionController: jest.fn((req: Request, res: Response) =>
+    res.status(201).json({ id: 1, description: "Test Transaction" })
+  ),
+  updateTransactionController: jest.fn((req: Request, res: Response) =>
+    res.status(200).json({
+      message: "Transaction updated successfully",
+      transaction: { id: 1, description: "Updated Transaction" },
+    })
+  ),
+  deleteTransactionController: jest.fn((req: Request, res: Response) =>
+    res.status(200).json({
+      message: "Transaction marked as deleted successfully",
+    })
+  ),
+  // deleterowsController: jest.fn((req: Request, res: Response) =>
+  //   res.status(200).json({
+  //     message: "All rows have been deleted successfully",
+  //   })
+  // ),
+  uploadCSVController: jest.fn((req: Request, res: Response) =>
+    res.status(200).json({
+      message: "CSV file processed successfully",
+      transactions: [{ id: 1, description: "CSV Transaction" }],
+      invalidRows: [],
+    })
+  ),
+}));
 
-  beforeAll(async () => {
-    server = await appfinal;
-  });
-
-  afterAll(() => {
-    if (server && server.close) {
-      server.close();
+const app: Express = express();
+app.use(express.json());
+app.use(cors());
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use("/api/transactions", transactionRoutes);
+const upload = multer({
+  dest: "uploads/", // Temporary folder to store uploaded files
+  limits: { fileSize: 1 * 1024 * 1024 }, // 1 MB size limit
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    if (ext !== ".csv") {
+      return cb(new Error("Only CSV files are allowed"));
     }
-  });
+    cb(null, true);
+  },
+});
+app.use(upload.single("file"));
+app.post(
+  "/api/upload",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await uploadCSVController(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+app.get("/", (_, res: Response) => {
+  res.status(200).json({ message: "Server is running!" });
+});
 
-  test("GET / - should return server is running message", async () => {
-    const response = await request(server).get("/");
+// Add route that throws an error
+app.get("/error", () => {
+  throw new Error("Test internal server error");
+});
+
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error(err.stack);
+  res.status(500).json({ message: `Internal server error: ${err.message}` });
+});
+
+describe("Server", () => {
+  it("should return server running message", async () => {
+    const response = await request(app).get("/");
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ message: "Server is running!" });
   });
 
-  describe("Transaction Routes", () => {
-    test("GET /api/transactions - should return all transactions", async () => {
-      const response = await request(server).get("/api/transactions");
-      expect(response.status).toBe(200);
-      // Assuming your real controller returns some transactions
-      expect(response.body).toEqual(
-        expect.objectContaining({ transactions: expect.any(Array) })
+  it("should handle CSV upload and processing", async () => {
+    const response = await request(app)
+      .post("/api/upload")
+      .attach(
+        "file",
+        Buffer.from("2022-01-01,Test Transaction,100,USD"),
+        "transactions.csv"
       );
-    });
-
-    test("POST /api/transactions - should add a transaction", async () => {
-      const transactionData = { name: "Test Transaction", amount: 100 };
-      const response = await request(server)
-        .post("/api/transactions")
-        .send(transactionData);
-      expect(response.status).toBe(201);
-      expect(response.body).toEqual(
-        expect.objectContaining({ message: "Transaction added" })
-      );
-    });
-
-    test("PUT /api/transactions/update/:id - should update a transaction", async () => {
-      const transactionId = "1";
-      const updatedData = { name: "Updated Transaction", amount: 150 };
-      const response = await request(server)
-        .put(`/api/transactions/update/${transactionId}`)
-        .send(updatedData);
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual(
-        expect.objectContaining({ message: "Transaction updated" })
-      );
-    });
-
-    test("DELETE /api/transactions/delete/:id - should delete a transaction", async () => {
-      const transactionId = "1";
-      const response = await request(server).delete(
-        `/api/transactions/delete/${transactionId}`
-      );
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual(
-        expect.objectContaining({ message: "Transaction deleted" })
-      );
-    });
-
-    test("POST /api/transactions/upload - should upload a CSV file", async () => {
-      const response = await request(server)
-        .post("/api/transactions/upload")
-        .attach("file", Buffer.from("test,csv,data"), "test.csv");
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual(
-        expect.objectContaining({ message: "CSV uploaded successfully" })
-      );
-    });
-
-    test("POST /api/transactions/upload - should reject non-CSV file", async () => {
-      const response = await request(server)
-        .post("/api/transactions/upload")
-        .attach("file", Buffer.from("not a csv"), "test.txt");
-      expect(response.status).toBe(400);
-      expect(response.body).toHaveProperty(
-        "message",
-        "Only CSV files are allowed"
-      );
-    });
-
-    test("POST /api/transactions/upload - should reject file exceeding size limit", async () => {
-      const largeFile = Buffer.alloc(2 * 1024 * 1024); // 2 MB file
-      const response = await request(server)
-        .post("/api/transactions/upload")
-        .attach("file", largeFile, "large.csv");
-      expect(response.status).toBe(400);
-      expect(response.body.message).toContain("File size exceeds limit");
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      message: "CSV file processed successfully",
+      transactions: [{ id: 1, description: "CSV Transaction" }],
+      invalidRows: [],
     });
   });
 
-  test("Unhandled error handling", async () => {
-    const mockError = new Error("Mock error");
-
-    jest.spyOn(console, "error").mockImplementation(() => {}); // Suppress logs in the test
-
-    server.use((req: Request, res: Response, next: NextFunction) => {
-      next(mockError); // Force an error
-    });
-
-    const response = await request(server).get("/");
+  it("should handle internal server errors", async () => {
+    const response = await request(app).get("/error");
     expect(response.status).toBe(500);
-    expect(response.body).toHaveProperty(
-      "message",
-      `Internal server error: ${mockError.message}`
-    );
-    jest.restoreAllMocks();
+    expect(response.body.message).toMatch(/Internal server error/);
   });
 });

@@ -14,5 +14,6 @@ router.post("/", addTransactionController);
 router.put("/update/:id", updateTransactionController);
 router.delete("/delete/:id", deleteTransactionController);
 router.post("/upload", uploadCSVController);
+// router.delete("/delete-data", deleterowsController);
 
 export default router;
