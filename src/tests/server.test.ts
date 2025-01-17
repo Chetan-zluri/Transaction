@@ -4,10 +4,10 @@ import bodyParser from "body-parser";
 import cors from "cors";
 import multer from "multer";
 import path from "path";
-import transactionRoutes from "./routes/transaction.routes";
-import { uploadCSVController } from "./controllers/transaction.controller";
+import transactionRoutes from "../routes/transaction.routes";
+import { uploadCSVController } from "../controllers/transaction.controller";
 
-jest.mock("./controllers/transaction.controller", () => ({
+jest.mock("../controllers/transaction.controller", () => ({
   getAllTransactionsController: jest.fn((req: Request, res: Response) =>
     res.status(200).json([{ id: 1, description: "Test Transaction" }])
   ),
@@ -25,11 +25,6 @@ jest.mock("./controllers/transaction.controller", () => ({
       message: "Transaction marked as deleted successfully",
     })
   ),
-  // deleterowsController: jest.fn((req: Request, res: Response) =>
-  //   res.status(200).json({
-  //     message: "All rows have been deleted successfully",
-  //   })
-  // ),
   uploadCSVController: jest.fn((req: Request, res: Response) =>
     res.status(200).json({
       message: "CSV file processed successfully",
@@ -45,6 +40,7 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use("/api/transactions", transactionRoutes);
+
 const upload = multer({
   dest: "uploads/", // Temporary folder to store uploaded files
   limits: { fileSize: 1 * 1024 * 1024 }, // 1 MB size limit
@@ -56,9 +52,10 @@ const upload = multer({
     cb(null, true);
   },
 });
-app.use(upload.single("file"));
+
 app.post(
   "/api/upload",
+  upload.single("file"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       await uploadCSVController(req, res, next);
@@ -67,6 +64,7 @@ app.post(
     }
   }
 );
+
 app.get("/", (_, res: Response) => {
   res.status(200).json({ message: "Server is running!" });
 });

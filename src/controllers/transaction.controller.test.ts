@@ -11,7 +11,6 @@ import {
   uploadCSVController,
 } from "./transaction.controller";
 import * as transactionService from "../services/transaction.Service";
-// import { deleteRowsService } from "../services/transaction.Service";
 jest.mock("../services/transaction.Service");
 
 const app = express();
@@ -23,7 +22,6 @@ app.post("/api/transactions", addTransactionController);
 app.put("/api/transactions/:id", updateTransactionController);
 app.delete("/api/transactions/:id", deleteTransactionController);
 app.post("/api/upload", upload.single("file"), uploadCSVController);
-// app.delete("/api/transactions/delete-data", deleterowsController);
 
 describe("Transaction Controllers", () => {
   afterEach(() => {
@@ -43,6 +41,26 @@ describe("Transaction Controllers", () => {
       expect(response.body).toEqual(mockTransactions);
       expect(transactionService.getAllTransactions).toHaveBeenCalledWith(1, 50);
       expect(transactionService.getAllTransactions).toHaveBeenCalledTimes(1);
+    });
+
+    it("should return 400 for invalid query parameters", async () => {
+      const response = await request(app).get(
+        "/api/transactions?page=-1&limit=50"
+      );
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe("Invalid Query parameters");
+
+      const response2 = await request(app).get(
+        "/api/transactions?page=1&limit=-3"
+      );
+      expect(response2.status).toBe(400);
+      expect(response2.body.error).toBe("Invalid Query parameters");
+
+      const response3 = await request(app).get(
+        "/api/transactions?page=1&limit=abc"
+      );
+      expect(response3.status).toBe(400);
+      expect(response3.body.error).toBe("Invalid Query parameters");
     });
 
     it("should handle errors gracefully", async () => {
@@ -88,6 +106,35 @@ describe("Transaction Controllers", () => {
 
       expect(response.status).toBe(400);
       expect(response.body.message).toBe("All fields are required");
+    });
+
+    it("should handle validation errors when 'deleted' field is provided", async () => {
+      const response = await request(app).post("/api/transactions").send({
+        date: "2023-12-01",
+        description: "New Transaction",
+        amount: 100,
+        Currency: "USD",
+        deleted: true,
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe("'deleted' field is not allowed.");
+    });
+
+    it("should handle transaction already exists error", async () => {
+      (transactionService.addTransaction as jest.Mock).mockRejectedValue(
+        new Error("Transaction already exists")
+      );
+
+      const response = await request(app).post("/api/transactions").send({
+        date: "2023-12-01",
+        description: "New Transaction",
+        amount: 100,
+        Currency: "USD",
+      });
+
+      expect(response.status).toBe(409);
+      expect(response.body.message).toBe("Transaction already exists");
     });
 
     it("should handle errors gracefully", async () => {
@@ -221,9 +268,10 @@ describe("Transaction Controllers", () => {
   describe("uploadCSVController", () => {
     it("should process a valid CSV file", async () => {
       const mockTransactions = [{ id: 1, description: "Test" }];
-      (transactionService.processCSV as jest.Mock).mockResolvedValue(
-        mockTransactions
-      );
+      (transactionService.processCSV as jest.Mock).mockResolvedValue({
+        message: "CSV file processed successfully",
+        transactions: mockTransactions,
+      });
 
       const csvContent =
         "date,description,amount,Currency\n2023-12-01,Test,100,USD";
@@ -271,9 +319,10 @@ describe("Transaction Controllers", () => {
 
     it("should handle BOM removal", async () => {
       const mockTransactions = [{ id: 1, description: "Test" }];
-      (transactionService.processCSV as jest.Mock).mockResolvedValue(
-        mockTransactions
-      );
+      (transactionService.processCSV as jest.Mock).mockResolvedValue({
+        message: "CSV file processed successfully",
+        transactions: mockTransactions,
+      });
 
       const csvContent =
         "\ufeffdate,description,amount,Currency\n2023-12-01,Test,100,USD";
@@ -289,57 +338,48 @@ describe("Transaction Controllers", () => {
 
       fs.unlinkSync(filePath); // Clean up
     });
-
-    it("should handle processing errors", async () => {
-      (transactionService.processCSV as jest.Mock).mockImplementation(() => {
-        throw new Error("CSV processing error");
-      });
-
-      const csvContent =
-        "date,description,amount,Currency\n2023-12-01,Test,100,USD";
-      const filePath = path.join(__dirname, "test.csv");
-      fs.writeFileSync(filePath, csvContent);
-
-      const response = await request(app)
-        .post("/api/upload")
-        .attach("file", filePath);
-
-      expect(response.status).toBe(500);
-      expect(response.body.message).toBe("CSV processing error");
-
-      fs.unlinkSync(filePath);
-    });
   });
-  // describe("deleterowsController", () => {
-  //   it("should delete all rows and return a success message for deletion", async () => {
-  //     (deleteRowsService as jest.Mock).mockResolvedValueOnce(undefined);
+  it("should remove BOM character if present", async () => {
+    const mockTransactions = [{ id: 1, description: "Test" }];
+    (transactionService.processCSV as jest.Mock).mockResolvedValue({
+      message: "CSV file processed successfully",
+      transactions: mockTransactions,
+    });
 
-  //     const response = await request(app).delete(
-  //       "/api/transactions/delete-data"
-  //     );
-  //     // console.log("response", response);
-  //     expect(response.status).toBe(200);
-  //     expect(response.body).toEqual({
-  //       message: "All rows have been deleted successfully",
-  //     });
-  //     expect(deleteRowsService).toHaveBeenCalled();
-  //   });
+    const csvContent =
+      "\ufeffdate,description,amount,Currency\n2023-12-01,Test,100,USD";
+    const filePath = path.join(__dirname, "test.csv");
+    fs.writeFileSync(filePath, csvContent);
 
-  //   it("should handle errors and return a failure message", async () => {
-  //     (deleteRowsService as jest.Mock).mockRejectedValueOnce(
-  //       new Error("Database error")
-  //     );
+    const response = await request(app)
+      .post("/api/upload")
+      .attach("file", filePath);
 
-  //     const response = await request(app).delete(
-  //       "/api/transactions/delete-data"
-  //     );
+    expect(response.status).toBe(200);
+    expect(response.body.transactions).toEqual(mockTransactions);
 
-  //     expect(response.status).toBe(500);
-  //     expect(response.body).toEqual({
-  //       message: "Failed to delete rows",
-  //       error: "Database error",
-  //     });
-  //     expect(deleteRowsService).toHaveBeenCalled();
-  //   });
-  // });
+    fs.unlinkSync(filePath); // Clean up
+  });
+
+  it("should return unchanged string if BOM character is not present", async () => {
+    const mockTransactions = [{ id: 1, description: "Test" }];
+    (transactionService.processCSV as jest.Mock).mockResolvedValue({
+      message: "CSV file processed successfully",
+      transactions: mockTransactions,
+    });
+
+    const csvContent =
+      "date,description,amount,Currency\n2023-12-01,Test,100,USD";
+    const filePath = path.join(__dirname, "test.csv");
+    fs.writeFileSync(filePath, csvContent);
+
+    const response = await request(app)
+      .post("/api/upload")
+      .attach("file", filePath);
+
+    expect(response.status).toBe(200);
+    expect(response.body.transactions).toEqual(mockTransactions);
+
+    fs.unlinkSync(filePath); // Clean up
+  });
 });

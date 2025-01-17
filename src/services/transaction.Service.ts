@@ -2,10 +2,7 @@ import { MikroORM } from "@mikro-orm/postgresql";
 import { Transaction } from "../entities/Transaction";
 import config from "../mikro-orm.config";
 import { isValid } from "date-fns";
-export const getAllTransactions = async (
-  page: number = 1,
-  limit: number = 50
-) => {
+export const getAllTransactions = async (page: number, limit: number) => {
   const orm = MikroORM.init(config);
   const em = (await orm).em.fork();
   const offset = (page - 1) * limit;
@@ -22,6 +19,9 @@ export const addTransaction = async (data: Partial<Transaction>) => {
     throw new Error(
       "All fields (date, description, amount, Currency) are required."
     );
+  }
+  if (data.deleted) {
+    throw new Error("'deleted' field is not allowed.");
   }
   const duplicate = await em.findOne(Transaction, {
     date: data.date,
@@ -83,19 +83,17 @@ export const deleteTransaction = async (id: number) => {
   await em.flush();
   return transaction;
 };
-// export const deleteRowsService = async (): Promise<void> => {
-//   const orm = await MikroORM.init(config);
-//   const em = orm.em.fork();
-//   console.log("print re");
-//   await em.nativeDelete(Transaction, {});
-// };
 const BATCH_SIZE = 100;
 export const processCSV = async (rows: any[]) => {
   const orm = await MikroORM.init(config);
   const em = orm.em.fork();
   const transactions: Transaction[] = [];
-  const invalidRows: any[] = []; // Array to store invalid rows
+  const validRows: any[] = [];
+  const invalidRows: any[] = [];
+  const duplicateRows: any[] = [];
+  let hasNewTransactions = false;
 
+  // Step 1: Filter and validate rows
   for (const row of rows) {
     const [date, description, amount, Currency] = row;
     const parsedDate = date.split("-").reverse().join("-");
@@ -107,36 +105,72 @@ export const processCSV = async (rows: any[]) => {
       !description ||
       !amount ||
       isNaN(parseFloat(amount)) ||
+      parseFloat(amount) <= 0 ||
       !Currency
     ) {
-      invalidRows.push(row); // Add invalid row to the array
+      invalidRows.push(row);
       continue;
     }
-    const duplicate = await em.findOne(Transaction, {
-      date: dateObject,
+    validRows.push({
+      dateObject,
       description,
+      amount: parseFloat(amount),
+      Currency,
     });
-    if (duplicate) {
-      invalidRows.push(row); // Add duplicate row to the array
+  }
+
+  // Step 2: Batch check for duplicates
+  const duplicates = await em.find(Transaction, {
+    $or: validRows.map((row) => ({
+      date: row.dateObject,
+      description: row.description,
+    })),
+  });
+
+  const duplicateMap: { [key: string]: boolean } = {};
+  for (const d of duplicates ?? []) {
+    const key = `${d.date.getTime()}-${d.description}`;
+    duplicateMap[key] = true;
+  }
+
+  const batchDuplicateMap: { [key: string]: boolean } = {};
+
+  // Step 3: Create transactions for non-duplicate rows
+  for (const row of validRows) {
+    const key = `${row.dateObject.getTime()}-${row.description}`;
+    if (duplicateMap[key] || batchDuplicateMap[key]) {
+      duplicateRows.push(row);
       continue;
     }
+    batchDuplicateMap[key] = true;
+    hasNewTransactions = true;
 
     transactions.push(
       em.create(Transaction, {
-        date: dateObject,
-        description,
-        amount: parseFloat(amount),
-        Currency,
+        date: row.dateObject,
+        description: row.description,
+        amount: row.amount,
+        Currency: row.Currency,
         deleted: false,
       })
     );
+
     if (transactions.length >= BATCH_SIZE) {
       await em.persistAndFlush(transactions);
-      transactions.length = 0; // Clear the batch
+      transactions.length = 0;
     }
+  }
+  if (!hasNewTransactions) {
+    return {
+      message: "All are Duplicate Transactions.",
+      transactions: [],
+    };
   }
   if (transactions.length > 0) {
     await em.persistAndFlush(transactions);
   }
-  return transactions; // Only return transactions
+  return {
+    message: "CSV file processed successfully",
+    transactions,
+  };
 };

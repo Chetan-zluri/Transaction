@@ -24,16 +24,16 @@ const main = async (): Promise<Express> => {
     },
   });
   app.use(upload.single("file"));
-  // app.post(
-  //   "/api/upload",
-  //   async (req: Request, res: Response, next: NextFunction) => {
-  //     try {
-  //       await uploadCSVController(req, res, next);
-  //     } catch (error) {
-  //       next(error);
-  //     }
-  //   }
-  // );
+  app.post(
+    "/api/upload",
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        await uploadCSVController(req, res, next);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
   app.get("/", (_, res) => {
     res.status(200).json({ message: "Server is running!" });
   });
