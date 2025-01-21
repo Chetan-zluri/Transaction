@@ -6,6 +6,7 @@ import {
   updateTransaction,
   deleteTransaction,
   processCSV,
+  getTransactionById,
 } from "../services/transaction.Service";
 
 jest.mock("@mikro-orm/postgresql");
@@ -67,6 +68,33 @@ describe("Transaction Services", () => {
     await expect(getAllTransactions(page, limit)).rejects.toThrow(
       "Database error"
     );
+  });
+  //GETSINGLE TRANSACTION
+  it("should return the transaction when found", async () => {
+    const transaction = {
+      id: 1,
+      date: new Date("2025-01-01T00:00:00Z"),
+      description: "Test Transaction",
+      amount: 100,
+      Currency: "USD",
+      deleted: false,
+    };
+
+    (emMock.findOne as jest.Mock).mockResolvedValue(transaction);
+
+    const result = await getTransactionById(1);
+
+    expect(result).toEqual(transaction);
+    expect(emMock.findOne).toHaveBeenCalledWith(Transaction, { id: 1 });
+  });
+
+  it("should throw an error when the transaction is not found", async () => {
+    (emMock.findOne as jest.Mock).mockResolvedValue(null);
+
+    await expect(getTransactionById(1)).rejects.toThrow(
+      "Transaction with ID 1 not found"
+    );
+    expect(emMock.findOne).toHaveBeenCalledWith(Transaction, { id: 1 });
   });
   //ADD A NEW TRANSACTION
   it("should add a new transaction", async () => {

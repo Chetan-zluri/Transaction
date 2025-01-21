@@ -2,7 +2,10 @@ import { MikroORM } from "@mikro-orm/postgresql";
 import { Transaction } from "../entities/Transaction";
 import config from "../mikro-orm.config";
 import { isValid } from "date-fns";
-export const getAllTransactions = async (page: number, limit: number) => {
+export const getAllTransactions = async (
+  page: number = 1,
+  limit: number = 10
+) => {
   const orm = MikroORM.init(config);
   const em = (await orm).em.fork();
   const offset = (page - 1) * limit;
@@ -11,6 +14,15 @@ export const getAllTransactions = async (page: number, limit: number) => {
     { deleted: false },
     { orderBy: { date: "DESC" }, limit, offset }
   );
+};
+export const getTransactionById = async (id: number) => {
+  const orm = await MikroORM.init(config);
+  const em = orm.em.fork();
+  const transaction = await em.findOne(Transaction, { id });
+  if (!transaction) {
+    throw new Error(`Transaction with ID ${id} not found`);
+  }
+  return transaction;
 };
 export const addTransaction = async (data: Partial<Transaction>) => {
   const orm = await MikroORM.init(config);

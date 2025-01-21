@@ -5,11 +5,17 @@ import cors from "cors";
 import path from "path";
 import multer from "multer";
 import transactionRoutes from "../routes/transaction.routes";
-import { uploadCSVController } from "../controllers/transaction.controller";
+import {
+  getTransactionByIdController,
+  uploadCSVController,
+} from "../controllers/transaction.controller";
 
 jest.mock("../controllers/transaction.controller", () => ({
   getAllTransactionsController: jest.fn((req, res) =>
     res.status(200).json([{ id: 1, description: "Test Transaction" }])
+  ),
+  getTransactionByIdController: jest.fn((req, res) =>
+    res.status(200).json({ id: 1, description: "Test Transaction" })
   ),
   addTransactionController: jest.fn((req, res) =>
     res.status(201).json({ id: 1, description: "Test Transaction" })
@@ -25,11 +31,6 @@ jest.mock("../controllers/transaction.controller", () => ({
       message: "Transaction marked as deleted successfully",
     })
   ),
-  // deleterowsController: jest.fn((req, res) =>
-  //   res.status(200).json({
-  //     message: "All transactions marked as deleted successfully",
-  //   })
-  // ),
   uploadCSVController: jest.fn((req, res) =>
     res.status(200).json({
       message: "CSV file processed successfully",
@@ -77,6 +78,12 @@ describe("Transaction Routes", () => {
     expect(response.body).toEqual([{ id: 1, description: "Test Transaction" }]);
   });
 
+  it("should route to getTransactionByIdController", async () => {
+    const response = await request(app).get("/api/transactions/1");
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ id: 1, description: "Test Transaction" });
+  });
+
   it("should route to addTransactionController", async () => {
     const response = await request(app).post("/api/transactions").send({
       date: "2022-01-01",
@@ -109,14 +116,6 @@ describe("Transaction Routes", () => {
       message: "Transaction marked as deleted successfully",
     });
   });
-
-  // it("should route to deleterowsController", async () => {
-  //   const response = await request(app).delete("/api/transactions/delete-data");
-  //   expect(response.status).toBe(200);
-  //   expect(response.body).toEqual({
-  //     message: "All transactions marked as deleted successfully",
-  //   });
-  // });
 
   it("should route to uploadCSVController", async () => {
     const response = await request(app)

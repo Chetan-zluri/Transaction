@@ -11,6 +11,9 @@ jest.mock("../controllers/transaction.controller", () => ({
   getAllTransactionsController: jest.fn((req: Request, res: Response) =>
     res.status(200).json([{ id: 1, description: "Test Transaction" }])
   ),
+  getTransactionByIdController: jest.fn((req: Request, res: Response) =>
+    res.status(200).json({ id: 1, description: "Test Transaction" })
+  ),
   addTransactionController: jest.fn((req: Request, res: Response) =>
     res.status(201).json({ id: 1, description: "Test Transaction" })
   ),

@@ -8,13 +8,16 @@ import {
   updateTransaction,
   deleteTransaction,
   processCSV,
+  getTransactionById,
 } from "../services/transaction.Service";
 
 export const getAllTransactionsController = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const page = parseInt(req.query.page as string, 10);
-      const limit = parseInt(req.query.limit as string, 10);
+      const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
+      const limit = req.query.page
+        ? parseInt(req.query.limit as string, 10)
+        : 10;
       if (isNaN(page) || isNaN(limit) || page <= 0 || limit <= 0) {
         return res.status(400).json({ error: "Invalid Query parameters" });
       }
@@ -22,6 +25,27 @@ export const getAllTransactionsController = asyncHandler(
       res.status(200).json(transactions);
     } catch (error) {
       res.status(500).json({ message: "Database error" });
+    }
+  }
+);
+
+export const getTransactionByIdController = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { id } = req.params;
+
+    try {
+      const transaction = await getTransactionById(Number(id));
+      res.status(200).json(transaction);
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        if (error.message === `Transaction with ID ${id} not found`) {
+          res.status(404).json({ message: error.message });
+        } else {
+          res.status(500).json({ message: error.message });
+        }
+      } else {
+        res.status(500).json({ message: "An unexpected error occurred" });
+      }
     }
   }
 );

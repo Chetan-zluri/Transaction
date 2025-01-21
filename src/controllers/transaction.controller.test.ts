@@ -9,6 +9,7 @@ import {
   updateTransactionController,
   deleteTransactionController,
   uploadCSVController,
+  getTransactionByIdController,
 } from "./transaction.controller";
 import * as transactionService from "../services/transaction.Service";
 jest.mock("../services/transaction.Service");
@@ -22,6 +23,7 @@ app.post("/api/transactions", addTransactionController);
 app.put("/api/transactions/:id", updateTransactionController);
 app.delete("/api/transactions/:id", deleteTransactionController);
 app.post("/api/upload", upload.single("file"), uploadCSVController);
+app.get("/api/transactions/:id", getTransactionByIdController);
 
 describe("Transaction Controllers", () => {
   afterEach(() => {
@@ -74,6 +76,56 @@ describe("Transaction Controllers", () => {
 
       expect(response.status).toBe(500);
       expect(response.body.message).toBe("Database error");
+    });
+  });
+
+  describe("getTransactionByIdController", () => {
+    it("should return the transaction when found", async () => {
+      const transaction = {
+        id: 1,
+        date: "2025-01-01T00:00:00Z",
+        description: "Test Transaction",
+        amount: 100,
+        Currency: "USD",
+        deleted: false,
+      };
+      (transactionService.getTransactionById as jest.Mock).mockResolvedValue(
+        transaction
+      );
+      const response = await request(app).get("/api/transactions/1");
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(transaction);
+      expect(transactionService.getTransactionById).toHaveBeenCalledWith(1);
+    });
+
+    it("should return 404 when the transaction is not found", async () => {
+      (transactionService.getTransactionById as jest.Mock).mockRejectedValue(
+        new Error("Transaction with ID 1 not found")
+      );
+      const response = await request(app).get("/api/transactions/1");
+      expect(response.status).toBe(404);
+      expect(response.body.message).toBe("Transaction with ID 1 not found");
+      expect(transactionService.getTransactionById).toHaveBeenCalledWith(1);
+    });
+
+    it("should return 500 for other errors", async () => {
+      (transactionService.getTransactionById as jest.Mock).mockRejectedValue(
+        new Error("Internal Server Error")
+      );
+      const response = await request(app).get("/api/transactions/1");
+      expect(response.status).toBe(500);
+      expect(response.body.message).toBe("Internal Server Error");
+      expect(transactionService.getTransactionById).toHaveBeenCalledWith(1);
+    });
+
+    it("should return 500 for unexpected errors", async () => {
+      (transactionService.getTransactionById as jest.Mock).mockRejectedValue(
+        new Error("An unexpected error occurred")
+      );
+      const response = await request(app).get("/api/transactions/1");
+      expect(response.status).toBe(500);
+      expect(response.body.message).toBe("An unexpected error occurred");
+      expect(transactionService.getTransactionById).toHaveBeenCalledWith(1);
     });
   });
 
