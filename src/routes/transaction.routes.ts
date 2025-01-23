@@ -5,7 +5,6 @@ import {
   updateTransactionController,
   deleteTransactionController,
   deleteTransactionsController,
-  uploadCSVController,
   getTransactionByIdController,
 } from "../controllers/transaction.controller";
 
@@ -16,6 +15,5 @@ router.post("/", addTransactionController);
 router.put("/update/:id", updateTransactionController);
 router.delete("/delete/:id", deleteTransactionController);
 router.delete("/delete-multiple", deleteTransactionsController);
-router.post("/upload", uploadCSVController);
 router.get("/:id", getTransactionByIdController);
 export default router;
