@@ -13,7 +13,7 @@ const main = async (): Promise<Express> => {
   app.use(bodyParser.urlencoded({ extended: true }));
   app.use("/api/transactions", transactionRoutes);
   const upload = multer({
-    storage: multer.memoryStorage(), // Temporary folder to store uploaded files
+    dest: "uploads/", // Temporary folder to store uploaded files
     limits: { fileSize: 1 * 1024 * 1024 }, // 1 MB size limit
     fileFilter: (req, file, cb) => {
       const ext = path.extname(file.originalname);
