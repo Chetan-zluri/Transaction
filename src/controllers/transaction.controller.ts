@@ -161,72 +161,70 @@ export const deleteTransactionController = asyncHandler(
   }
 );
 
-export const uploadCSVController = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  const filePath = req.file?.path;
+export const uploadCSVController = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const filePath = req.file?.path;
 
-  if (!filePath) {
-    return res.status(400).json({ message: "No file uploaded" });
-  }
+    if (!filePath) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
 
-  try {
-    const fileContent = fs.readFileSync(filePath, "utf8");
+    try {
+      const fileContent = fs.readFileSync(filePath, "utf8");
 
-    if (!fileContent) {
+      if (!fileContent) {
+        fs.unlinkSync(filePath);
+        return res.status(400).json({ message: "The file is empty" });
+      }
+
+      const rows: any[] = [];
+      Papa.parse<string>(fileContent, {
+        header: false, // Adjust to true if the CSV has a header
+        skipEmptyLines: true,
+        beforeFirstChunk: (chunk: string) => {
+          if (chunk.charAt(0) === "\uFEFF") {
+            chunk = chunk.slice(1); // Remove BOM
+          }
+          return chunk;
+        },
+        complete: (result) => {
+          rows.push(...result.data);
+        },
+        error: (error: Error) => {
+          throw new Error(`Error parsing CSV file: ${error.message}`);
+        },
+      });
+
+      const { message, transactions, invalidRows, duplicateRows } =
+        await processCSV(rows); // Only transactions are returned
+
+      // Clean up the uploaded file after processing
       fs.unlinkSync(filePath);
-      return res.status(400).json({ message: "The file is empty" });
-    }
 
-    const rows: any[] = [];
-    Papa.parse<string>(fileContent, {
-      header: false, // Adjust to true if the CSV has a header
-      skipEmptyLines: true,
-      beforeFirstChunk: (chunk: string) => {
-        if (chunk.charAt(0) === "\uFEFF") {
-          chunk = chunk.slice(1); // Remove BOM
-        }
-        return chunk;
-      },
-      complete: (result) => {
-        rows.push(...result.data);
-      },
-      error: (error: Error) => {
-        throw new Error(`Error parsing CSV file: ${error.message}`);
-      },
-    });
+      res.status(200).json({
+        message,
+        transactions, // Only transactions are included in the response
+        invalidRows, // Include invalid rows in the response
+      });
+    } catch (error) {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath); // Ensure the file is deleted even on error
+      }
+      console.error("Error processing CSV file:", error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "An unexpected error occurred during CSV processing";
 
-    const { message, transactions, invalidRows, duplicateRows } =
-      await processCSV(rows); // Only transactions are returned
+      if (errorMessage === "Transactions are already Updated.") {
+        return res.status(400).json({
+          message: errorMessage,
+        });
+      }
 
-    // Clean up the uploaded file after processing
-    fs.unlinkSync(filePath);
-
-    res.status(200).json({
-      message,
-      transactions, // Only transactions are included in the response
-      invalidRows, // Include invalid rows in the response
-    });
-  } catch (error) {
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath); // Ensure the file is deleted even on error
-    }
-    console.error("Error processing CSV file:", error);
-    const errorMessage =
-      error instanceof Error
-        ? error.message
-        : "An unexpected error occurred during CSV processing";
-
-    if (errorMessage === "Transactions are already Updated.") {
-      return res.status(400).json({
+      res.status(500).json({
         message: errorMessage,
       });
     }
-
-    res.status(500).json({
-      message: errorMessage,
-    });
   }
-};
+);
