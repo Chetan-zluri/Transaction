@@ -34,9 +34,9 @@ const main = async (): Promise<Express> => {
   //     }
   //   }
   // );
-  app.get("/", (_, res) => {
-    res.status(200).json({ message: "Server is running!" });
-  });
+  // app.get("/", (_, res) => {
+  //   res.status(200).json({ message: "Server is running!" });
+  // });
   app.get("/error", () => {
     throw new Error("Test internal server error");
   });
