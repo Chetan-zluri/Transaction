@@ -8,10 +8,12 @@ import {
   addTransactionController,
   updateTransactionController,
   deleteTransactionController,
+  deleteTransactionsController,
   uploadCSVController,
   getTransactionByIdController,
 } from "./transaction.controller";
 import * as transactionService from "../services/transaction.Service";
+import { deleteTrans } from "../services/transaction.Service";
 jest.mock("../services/transaction.Service");
 
 const app = express();
@@ -22,6 +24,7 @@ app.get("/api/transactions", getAllTransactionsController);
 app.post("/api/transactions", addTransactionController);
 app.put("/api/transactions/:id", updateTransactionController);
 app.delete("/api/transactions/:id", deleteTransactionController);
+app.delete("api/transactions/delete-multiple", deleteTransactionsController);
 app.post("/api/upload", upload.single("file"), uploadCSVController);
 app.get("/api/transactions/:id", getTransactionByIdController);
 
@@ -31,16 +34,24 @@ describe("Transaction Controllers", () => {
   });
 
   describe("getAllTransactionsController", () => {
-    it("should return all transactions", async () => {
+    it("should return all transactions with pagination info", async () => {
       const mockTransactions = [{ id: 1, description: "Test Transaction" }];
-      (transactionService.getAllTransactions as jest.Mock).mockResolvedValue(
-        mockTransactions
-      );
+      const totalCount = 1;
+      (transactionService.getAllTransactions as jest.Mock).mockResolvedValue({
+        transactions: mockTransactions,
+        totalCount,
+      });
+
       const response = await request(app).get(
         "/api/transactions?page=1&limit=50"
       );
+
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(mockTransactions);
+      expect(response.body).toEqual({
+        transactions: mockTransactions,
+        totalPages: Math.ceil(totalCount / 50),
+        totalCount,
+      });
       expect(transactionService.getAllTransactions).toHaveBeenCalledWith(1, 50);
       expect(transactionService.getAllTransactions).toHaveBeenCalledTimes(1);
     });
@@ -230,11 +241,9 @@ describe("Transaction Controllers", () => {
           throw new Error("Transaction not found or is deleted");
         }
       );
-
       const response = await request(app).put("/api/transactions/1").send({
         description: "Updated Transaction",
       });
-
       expect(response.status).toBe(404);
       expect(response.body.message).toBe("Transaction not found");
     });
@@ -250,21 +259,38 @@ describe("Transaction Controllers", () => {
         description: "Existing Transaction",
       });
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(409);
       expect(response.body.message).toBe(
         "Transaction already exists with the same data"
       );
     });
 
+    // it("should return 400 for invalid amount", async () => {
+    //   (transactionService.updateTransaction as jest.Mock).mockRejectedValue(
+    //     new Error("Amount must be greater than zero")
+    //   );
+    //   const transaction = {
+    //     description: "Updated test",
+    //     amount: -20,
+    //     date: "2023-02-01",
+    //     Currency: "EUR",
+    //   };
+    //   const response = await request(app)
+    //     .put("/transactions/1")
+    //     .send(transaction);
+    //   expect(response.status).toBe(400);
+    //   expect(response.body).toEqual({
+    //     message: "Amount must be greater than zero",
+    //   });
+    // });
+
     it("should handle errors gracefully", async () => {
       (transactionService.updateTransaction as jest.Mock).mockRejectedValue(
         new Error("Error updating transaction")
       );
-
       const response = await request(app).put("/api/transactions/1").send({
         description: "Updated Transaction",
       });
-
       expect(response.status).toBe(500);
       expect(response.body.message).toBe("Error updating transaction");
     });
@@ -316,6 +342,48 @@ describe("Transaction Controllers", () => {
       expect(response.body.message).toBe("Error deleting transaction");
     });
   });
+
+  // describe("deleteTransactionsController", () => {
+  //   it("should delete the specified transactions and return a success message", async () => {
+  //     const ids = [1, 2, 3];
+  //     const deletedTransactions = ids.map((id) => ({ id, deleted: true }));
+  //     (deleteTrans as jest.Mock).mockResolvedValue(deletedTransactions);
+  //     const response = await request(app)
+  //       .delete("/transactions/delete-multiple")
+  //       .send({ ids });
+  //     expect(response.status).toBe(200);
+  //     expect(response.body.message).toBe(
+  //       `${deletedTransactions.length} transactions deleted successfully.`
+  //     );
+  //     expect(response.body.deletedTransactions).toEqual(deletedTransactions);
+  //     expect(deleteTrans).toHaveBeenCalledWith(ids);
+  //   });
+
+  //   it("should return a 400 status if the input is invalid", async () => {
+  //     const response = await request(app)
+  //       .delete("/transactions/delete-multiple")
+  //       .send({ ids: [] });
+
+  //     expect(response.status).toBe(400);
+  //     expect(response.body.message).toBe(
+  //       "Invalid input: Array of IDs is required."
+  //     );
+  //   });
+
+  //   it("should return a 500 status if an error occurs during deletion", async () => {
+  //     const ids = [1, 2, 3];
+  //     (deleteTrans as jest.Mock).mockRejectedValue(
+  //       new Error("An error occurred")
+  //     );
+  //     const response = await request(app)
+  //       .delete("/transactions/delete-multiple")
+  //       .send({ ids });
+  //     expect(response.status).toBe(500);
+  //     expect(response.body.message).toBe(
+  //       "An error occurred while deleting transactions."
+  //     );
+  //   });
+  // });
 
   describe("uploadCSVController", () => {
     it("should process a valid CSV file", async () => {

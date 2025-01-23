@@ -7,6 +7,7 @@ import {
   addTransaction,
   updateTransaction,
   deleteTransaction,
+  deleteTrans,
   processCSV,
   getTransactionById,
 } from "../services/transaction.Service";
@@ -21,8 +22,12 @@ export const getAllTransactionsController = asyncHandler(
       if (isNaN(page) || isNaN(limit) || page <= 0 || limit <= 0) {
         return res.status(400).json({ error: "Invalid Query parameters" });
       }
-      const transactions = await getAllTransactions(page, limit);
-      res.status(200).json(transactions);
+      const { transactions, totalCount } = await getAllTransactions(
+        page,
+        limit
+      );
+      const totalPages = Math.ceil(totalCount / limit);
+      res.status(200).json({ transactions, totalPages, totalCount });
     } catch (error) {
       res.status(500).json({ message: "Database error" });
     }
@@ -99,9 +104,34 @@ export const updateTransactionController = asyncHandler(
         return res.status(404).json({ message: "Transaction not found" });
       }
       if (error.message === "Transaction already exists with the same data") {
+        return res.status(409).json({ message: error.message });
+      }
+      if (error.message === "Amount must be greater than zero") {
         return res.status(400).json({ message: error.message });
       }
       res.status(500).json({ message: "Error updating transaction" });
+    }
+  }
+);
+
+export const deleteTransactionsController = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { ids } = req.body; // Get the array of IDs from the request body
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "Invalid input: Array of IDs is required." });
+    }
+    try {
+      const deletedTransactions = await deleteTrans(ids);
+      res.status(200).json({
+        message: `${deletedTransactions.length} transactions deleted successfully.`,
+        deletedTransactions,
+      });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: "An error occurred while deleting transactions." });
     }
   }
 );
@@ -142,12 +172,17 @@ export const uploadCSVController = asyncHandler(
     try {
       const fileContent = fs.readFileSync(filePath, "utf8");
 
+      if (!fileContent) {
+        fs.unlinkSync(filePath);
+        return res.status(400).json({ message: "The file is empty" });
+      }
+
       const rows: any[] = [];
       Papa.parse<string>(fileContent, {
         header: false, // Adjust to true if the CSV has a header
         skipEmptyLines: true,
         beforeFirstChunk: (chunk: string) => {
-          if (chunk.charCodeAt(0) === 0xfeff) {
+          if (chunk.charAt(0) === "\uFEFF") {
             chunk = chunk.slice(1); // Remove BOM
           }
           return chunk;
@@ -160,13 +195,16 @@ export const uploadCSVController = asyncHandler(
         },
       });
 
-      const { message, transactions } = await processCSV(rows); // Only transactions are returned
+      const { message, transactions, invalidRows, duplicateRows } =
+        await processCSV(rows); // Only transactions are returned
+
       // Clean up the uploaded file after processing
       fs.unlinkSync(filePath);
 
       res.status(200).json({
         message,
         transactions, // Only transactions are included in the response
+        invalidRows, // Include invalid rows in the response
       });
     } catch (error) {
       if (fs.existsSync(filePath)) {
@@ -177,6 +215,12 @@ export const uploadCSVController = asyncHandler(
         error instanceof Error
           ? error.message
           : "An unexpected error occurred during CSV processing";
+
+      if (errorMessage === "Transactions are already Updated.") {
+        return res.status(400).json({
+          message: errorMessage,
+        });
+      }
 
       res.status(500).json({
         message: errorMessage,

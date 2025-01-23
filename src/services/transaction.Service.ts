@@ -6,14 +6,16 @@ export const getAllTransactions = async (
   page: number = 1,
   limit: number = 10
 ) => {
-  const orm = MikroORM.init(config);
-  const em = (await orm).em.fork();
+  const orm = await MikroORM.init(config);
+  const em = orm.em.fork();
   const offset = (page - 1) * limit;
-  return em.find(
+  const transactions = await em.find(
     Transaction,
     { deleted: false },
     { orderBy: { date: "DESC" }, limit, offset }
   );
+  const totalCount = await em.count(Transaction, { deleted: false });
+  return { transactions, totalCount };
 };
 export const getTransactionById = async (id: number) => {
   const orm = await MikroORM.init(config);
@@ -38,6 +40,7 @@ export const addTransaction = async (data: Partial<Transaction>) => {
   const duplicate = await em.findOne(Transaction, {
     date: data.date,
     description: data.description,
+    deleted: false,
   });
   if (duplicate) {
     throw new Error("Transaction already exists");
@@ -61,6 +64,9 @@ export const updateTransaction = async (
   const transaction = await em.findOne(Transaction, { id, deleted: false });
   if (!transaction || transaction.deleted) {
     throw new Error("Transaction not found or is deleted");
+  }
+  if (data.amount !== undefined && data.amount <= 0) {
+    throw new Error("Amount must be greater than zero");
   }
 
   // Check if the data being updated is identical to an existing transaction
@@ -95,6 +101,21 @@ export const deleteTransaction = async (id: number) => {
   await em.flush();
   return transaction;
 };
+
+export const deleteTrans = async (ids: number[]) => {
+  const orm = await MikroORM.init(config);
+  const em = orm.em.fork();
+  const transactions = await em.find(Transaction, { id: { $in: ids } });
+  if (transactions.length === 0) {
+    throw new Error("No transactions found with the provided IDs.");
+  }
+  transactions.forEach((transaction) => {
+    transaction.deleted = true;
+  });
+  await em.flush();
+  return transactions;
+};
+
 const BATCH_SIZE = 100;
 export const processCSV = async (rows: any[]) => {
   const orm = await MikroORM.init(config);
@@ -136,6 +157,7 @@ export const processCSV = async (rows: any[]) => {
     $or: validRows.map((row) => ({
       date: row.dateObject,
       description: row.description,
+      deleted: false,
     })),
   });
 
@@ -172,17 +194,19 @@ export const processCSV = async (rows: any[]) => {
       transactions.length = 0;
     }
   }
+
   if (!hasNewTransactions) {
-    return {
-      message: "All are Duplicate Transactions.",
-      transactions: [],
-    };
+    throw new Error("Transactions are already Updated.");
   }
+
   if (transactions.length > 0) {
     await em.persistAndFlush(transactions);
   }
+
   return {
     message: "CSV file processed successfully",
     transactions,
+    invalidRows,
+    duplicateRows,
   };
 };

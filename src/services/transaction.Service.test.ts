@@ -5,6 +5,7 @@ import {
   addTransaction,
   updateTransaction,
   deleteTransaction,
+  deleteTrans,
   processCSV,
   getTransactionById,
 } from "../services/transaction.Service";
@@ -21,6 +22,7 @@ describe("Transaction Services", () => {
       find: jest.fn(),
       findOne: jest.fn(),
       create: jest.fn(),
+      count: jest.fn(),
       nativeDelete: jest.fn(),
       persistAndFlush: jest.fn(),
       flush: jest.fn(),
@@ -42,14 +44,16 @@ describe("Transaction Services", () => {
     const mockTransactions = [
       { id: 1, description: "Test Transaction", deleted: false },
     ];
+    const totalCount = 1;
 
     (emMock.find as jest.Mock).mockResolvedValue(mockTransactions);
+    (emMock.count as jest.Mock).mockResolvedValue(totalCount);
 
     const page = 1;
     const limit = 50;
-    const transactions = await getAllTransactions(page, limit);
+    const result = await getAllTransactions(page, limit);
 
-    expect(transactions).toEqual(mockTransactions);
+    expect(result).toEqual({ transactions: mockTransactions, totalCount });
     expect(emMock.find).toHaveBeenCalledWith(
       Transaction,
       { deleted: false },
@@ -59,6 +63,7 @@ describe("Transaction Services", () => {
         offset: 0,
       }
     );
+    expect(emMock.count).toHaveBeenCalledWith(Transaction, { deleted: false });
   });
 
   it("should handle errors gracefully", async () => {
@@ -338,6 +343,7 @@ describe("Transaction Services", () => {
       description: "Updated Transaction",
     });
   });
+
   //DELETE A TRANSACTION
   it("should delete a transaction", async () => {
     const existingTransaction: Partial<Transaction> = {
@@ -360,82 +366,168 @@ describe("Transaction Services", () => {
     await expect(deleteTransaction(1)).rejects.toThrow("Transaction not found");
   });
 
+  //DELETE TRANSACTIONS
+
+  it("should soft delete the specified transactions", async () => {
+    const ids = [1, 2, 3];
+    const transactions = ids.map((id) => ({ id, deleted: false }));
+    (emMock.find as jest.Mock).mockResolvedValue(transactions);
+    const result = await deleteTrans(ids);
+    expect(emMock.find).toHaveBeenCalledWith(Transaction, { id: { $in: ids } });
+    transactions.forEach((transaction) => {
+      expect(transaction.deleted).toBe(true);
+    });
+    expect(emMock.flush).toHaveBeenCalled();
+    expect(result).toEqual(transactions);
+  });
+
+  it("should throw an error if no transactions are found", async () => {
+    const ids = [1, 2, 3];
+    (emMock.find as jest.Mock).mockResolvedValue([]);
+    await expect(deleteTrans(ids)).rejects.toThrow(
+      "No transactions found with the provided IDs."
+    );
+    expect(emMock.find).toHaveBeenCalledWith(Transaction, { id: { $in: ids } });
+    expect(emMock.flush).not.toHaveBeenCalled();
+  });
+
   //PROCESSCSV
   it("should process a CSV file", async () => {
-    (emMock.findOne as jest.Mock).mockResolvedValue(null);
+    (emMock.find as jest.Mock).mockResolvedValue([]);
     (emMock.create as jest.Mock).mockReturnValue({
       id: 1,
       description: "CSV Transaction",
+      date: new Date("2022-01-01"),
+      amount: 100,
+      Currency: "USD",
       deleted: false,
     });
     (emMock.persistAndFlush as jest.Mock).mockResolvedValue(null);
 
     const rows = [["2022-01-01", "CSV Transaction", "100", "USD"]];
-    const { message, transactions } = await processCSV(rows);
+    const { message, transactions, invalidRows, duplicateRows } =
+      await processCSV(rows);
+
     expect(message).toBe("CSV file processed successfully");
     expect(transactions).toEqual([
-      { id: 1, description: "CSV Transaction", deleted: false },
+      expect.objectContaining({
+        date: new Date("2022-01-01"),
+        description: "CSV Transaction",
+        amount: 100,
+        Currency: "USD",
+        deleted: false,
+      }),
+    ]);
+    expect(invalidRows).toEqual([]);
+    expect(duplicateRows).toEqual([]);
+  });
+
+  it("should process valid rows and handle duplicates", async () => {
+    const rows = [
+      ["22-01-2025", "Description 1", "100", "USD"], // valid
+      ["22-01-2025", "Description 2", "200", "USD"], // valid
+      ["invalid-date", "Description 3", "300", "USD"], // invalid date
+      ["22-01-2025", "", "400", "USD"], // invalid description
+      ["22-01-2025", "Description 4", "", "USD"], // invalid amount
+      ["22-01-2025", "Description 5", "-500", "USD"], // invalid amount
+      ["22-01-2025", "Description 6", "600", ""], // invalid currency
+    ];
+
+    const mockDuplicates = [
+      {
+        date: new Date("2025-01-22"),
+        description: "Description 1",
+        deleted: false,
+      },
+    ];
+
+    (emMock.find as jest.Mock).mockResolvedValue(mockDuplicates);
+    (emMock.create as jest.Mock).mockImplementation((entity, data) => data);
+
+    const result = await processCSV(rows);
+
+    expect(result.invalidRows).toEqual([
+      ["invalid-date", "Description 3", "300", "USD"],
+      ["22-01-2025", "", "400", "USD"],
+      ["22-01-2025", "Description 4", "", "USD"],
+      ["22-01-2025", "Description 5", "-500", "USD"],
+      ["22-01-2025", "Description 6", "600", ""],
+    ]);
+
+    expect(result.duplicateRows).toEqual([
+      {
+        dateObject: new Date("2025-01-22"),
+        description: "Description 1",
+        amount: 100,
+        Currency: "USD",
+      },
+    ]);
+
+    expect(result.transactions).toEqual([
+      {
+        date: new Date("2025-01-22"),
+        description: "Description 2",
+        amount: 200,
+        Currency: "USD",
+        deleted: false,
+      },
+    ]);
+
+    expect(emMock.persistAndFlush).toHaveBeenCalledTimes(1);
+    expect(emMock.persistAndFlush).toHaveBeenCalledWith([
+      {
+        date: new Date("2025-01-22"),
+        description: "Description 2",
+        amount: 200,
+        Currency: "USD",
+        deleted: false,
+      },
     ]);
   });
 
-  it("should batch insert transactions when batch size is reached", async () => {
-    const rows = Array.from({ length: 2000 }, (_, i) => [
-      "2022-01-01",
-      `Transaction ${i}`,
+  it("should throw an error if Transactions are already Updated", async () => {
+    const rows = [
+      ["22-01-2025", "Description 1", "100", "USD"], // duplicate
+    ];
+
+    const mockDuplicates = [
+      {
+        date: new Date("2025-01-22"),
+        description: "Description 1",
+        deleted: false,
+      },
+    ];
+
+    (emMock.find as jest.Mock).mockResolvedValue(mockDuplicates);
+
+    await expect(processCSV(rows)).rejects.toThrow(
+      "Transactions are already Updated."
+    );
+  });
+
+  it("should handle batch processing with BATCH_SIZE", async () => {
+    const rows = Array.from({ length: 105 }, (_, i) => [
+      "22-01-2025",
+      `Description ${i}`,
       "100",
       "USD",
     ]);
 
-    (emMock.findOne as jest.Mock).mockResolvedValue(null);
-    (emMock.create as jest.Mock).mockImplementation((entity) => entity);
-    (emMock.persistAndFlush as jest.Mock).mockResolvedValue(null);
+    const mockDuplicates: Transaction[] = [];
 
-    const { message, transactions } = await processCSV(rows);
-    if (Array.isArray(transactions)) {
-      expect(transactions.length).toBe(0);
-    } else {
-      expect(message).toBe("All are Duplicate Transactions.");
-    }
-    expect(emMock.persistAndFlush).toHaveBeenCalledTimes(20); // Called twice for 2000 rows with BATCH_SIZE = 1000
-  });
+    (emMock.find as jest.Mock).mockResolvedValue(mockDuplicates);
+    (emMock.create as jest.Mock).mockImplementation((entity, data) => data);
 
-  it("should add invalid rows to invalidRows array in processCSV", async () => {
-    const rows = [
-      ["Invalid Date", "CSV Transaction", "100", "USD"],
-      ["2022-01-01", "CSV Transaction", "Invalid Amount", "USD"],
-    ];
-    const { message, transactions } = await processCSV(rows);
-    expect(message).toBe("All are Duplicate Transactions.");
-    expect(transactions).toEqual([]);
-  });
+    await processCSV(rows);
 
-  it("should add duplicate rows to invalidRows array in processCSV", async () => {
-    const rows = [
-      ["2022-01-01", "Duplicate Transaction", "100", "USD"],
-      ["2022-01-01", "Duplicate Transaction", "100", "USD"],
-    ];
-    (emMock.findOne as jest.Mock).mockResolvedValueOnce({});
-    const { message, transactions } = await processCSV(rows);
-    expect(message).toBe("CSV file processed successfully");
-    expect(transactions).toEqual([]);
-  });
-
-  it("should populate duplicateMap with the correct keys", () => {
-    const duplicates = [
-      { date: new Date("2025-01-01T00:00:00Z"), description: "Test 1" },
-      { date: new Date("2025-01-02T00:00:00Z"), description: "Test 2" },
-      { date: new Date("2025-01-01T00:00:00Z"), description: "Test 3" },
-    ];
-    const duplicateMap: { [key: string]: boolean } = {};
-    for (const d of duplicates ?? []) {
-      const key = `${d.date.getTime()}-${d.description}`;
-      duplicateMap[key] = true;
-    }
-    const expectedDuplicateMap = {
-      "1735689600000-Test 1": true,
-      "1735776000000-Test 2": true,
-      "1735689600000-Test 3": true,
-    };
-    expect(duplicateMap).toEqual(expectedDuplicateMap);
+    expect(emMock.persistAndFlush).toHaveBeenCalledTimes(2);
+    expect(emMock.persistAndFlush).toHaveBeenNthCalledWith(
+      1,
+      expect.any(Array)
+    );
+    expect(emMock.persistAndFlush).toHaveBeenNthCalledWith(
+      2,
+      expect.any(Array)
+    );
   });
 });

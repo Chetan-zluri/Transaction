@@ -7,6 +7,7 @@ import multer from "multer";
 import transactionRoutes from "../routes/transaction.routes";
 import {
   getTransactionByIdController,
+  deleteTransactionsController,
   uploadCSVController,
 } from "../controllers/transaction.controller";
 
@@ -29,6 +30,12 @@ jest.mock("../controllers/transaction.controller", () => ({
   deleteTransactionController: jest.fn((req, res) =>
     res.status(200).json({
       message: "Transaction marked as deleted successfully",
+    })
+  ),
+  deleteTransactionsController: jest.fn((req, res) =>
+    res.status(200).json({
+      message: "3 transactions deleted successfully.",
+      deletedTransactions: [{ id: 1 }, { id: 2 }, { id: 3 }],
     })
   ),
   uploadCSVController: jest.fn((req, res) =>
@@ -115,6 +122,21 @@ describe("Transaction Routes", () => {
     expect(response.body).toEqual({
       message: "Transaction marked as deleted successfully",
     });
+  });
+
+  it("should delete the specified transactions and return a success message", async () => {
+    const ids = [1, 2, 3];
+    const response = await request(app)
+      .delete("/api/transactions/delete-multiple")
+      .send({ ids });
+    expect(response.status).toBe(200);
+    expect(response.body.message).toBe("3 transactions deleted successfully.");
+    expect(response.body.deletedTransactions).toEqual([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
+    expect(deleteTransactionsController).toHaveBeenCalled();
   });
 
   it("should route to uploadCSVController", async () => {

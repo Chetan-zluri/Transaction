@@ -28,6 +28,12 @@ jest.mock("../controllers/transaction.controller", () => ({
       message: "Transaction marked as deleted successfully",
     })
   ),
+  deleteTransactionsController: jest.fn((req, res) =>
+    res.status(200).json({
+      message: "3 transactions deleted successfully.",
+      deletedTransactions: [{ id: 1 }, { id: 2 }, { id: 3 }],
+    })
+  ),
   uploadCSVController: jest.fn((req: Request, res: Response) =>
     res.status(200).json({
       message: "CSV file processed successfully",
