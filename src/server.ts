@@ -11,7 +11,7 @@ const main = async (): Promise<Express> => {
   app.use(cors());
   app.use(bodyParser.json());
   app.use(bodyParser.urlencoded({ extended: true }));
-  app.use("/api/transactions", transactionRoutes);
+  // app.use("/api/transactions", transactionRoutes);
   const upload = multer({
     dest: "uploads/", // Temporary folder to store uploaded files
     limits: { fileSize: 1 * 1024 * 1024 }, // 1 MB size limit
