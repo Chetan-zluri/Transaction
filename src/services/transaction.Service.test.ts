@@ -203,8 +203,7 @@ describe("Transaction Services", () => {
     expect(emMock.findOne).toHaveBeenCalledWith(Transaction, {
       date: existingTransaction.date,
       description: updatedData.description,
-      amount: updatedData.amount,
-      Currency: existingTransaction.Currency,
+      deleted: false,
     });
     expect(emMock.persistAndFlush).toHaveBeenCalledWith({
       ...existingTransaction,
@@ -225,7 +224,7 @@ describe("Transaction Services", () => {
     });
   });
 
-  it("should throw an error if a duplicate transaction exists with the same description", async () => {
+  it("should throw an error if a duplicate transaction exists with the same description and date", async () => {
     const existingTransaction = {
       id: 1,
       date: new Date("2023-12-01"),
@@ -261,53 +260,10 @@ describe("Transaction Services", () => {
     expect(emMock.findOne).toHaveBeenCalledWith(Transaction, {
       date: existingTransaction.date,
       description: updatedData.description,
-      amount: updatedData.amount,
-      Currency: existingTransaction.Currency,
+      deleted: false,
     });
   });
 
-  it("should throw an error if a duplicate transaction exists with the same date", async () => {
-    const existingTransaction = {
-      id: 1,
-      date: new Date("2023-12-01"),
-      description: "Old Transaction",
-      amount: 100,
-      Currency: "USD",
-      deleted: false,
-    };
-    const duplicateTransaction = {
-      id: 2,
-      date: new Date("2023-12-01"),
-      description: "Old Transaction",
-      amount: 100,
-      Currency: "USD",
-      deleted: false,
-    };
-    const updatedData = {
-      date: new Date("2023-12-01"),
-      description: "Old Transaction",
-      amount: 100,
-      Currency: "USD",
-    };
-
-    (emMock.findOne as jest.Mock).mockResolvedValueOnce(existingTransaction);
-    (emMock.findOne as jest.Mock).mockResolvedValueOnce(duplicateTransaction);
-
-    await expect(updateTransaction(1, updatedData)).rejects.toThrow(
-      "Transaction already exists with the same data"
-    );
-
-    expect(emMock.findOne).toHaveBeenCalledWith(Transaction, {
-      id: 1,
-      deleted: false,
-    });
-    expect(emMock.findOne).toHaveBeenCalledWith(Transaction, {
-      date: updatedData.date,
-      description: updatedData.description,
-      amount: updatedData.amount,
-      Currency: updatedData.Currency,
-    });
-  });
   it("should handle errors during database operations", async () => {
     const existingTransaction = {
       id: 1,
@@ -335,8 +291,7 @@ describe("Transaction Services", () => {
     expect(emMock.findOne).toHaveBeenCalledWith(Transaction, {
       date: existingTransaction.date,
       description: "Updated Transaction",
-      amount: existingTransaction.amount,
-      Currency: existingTransaction.Currency,
+      deleted: false,
     });
     expect(emMock.persistAndFlush).toHaveBeenCalledWith({
       ...existingTransaction,

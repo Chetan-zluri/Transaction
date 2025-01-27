@@ -73,8 +73,7 @@ export const updateTransaction = async (
   const duplicate = await em.findOne(Transaction, {
     date: data.date || transaction.date,
     description: data.description || transaction.description,
-    amount: data.amount || transaction.amount,
-    Currency: data.Currency || transaction.Currency,
+    deleted: false,
   });
 
   // If a duplicate transaction exists, return an error
