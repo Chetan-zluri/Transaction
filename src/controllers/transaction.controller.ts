@@ -204,7 +204,8 @@ export const uploadCSVController = asyncHandler(
       res.status(200).json({
         message,
         transactions, // Only transactions are included in the response
-        invalidRows, // Include invalid rows in the response
+        invalidRows,
+        duplicateRows, // Include invalid rows in the response
       });
     } catch (error) {
       if (fs.existsSync(filePath)) {

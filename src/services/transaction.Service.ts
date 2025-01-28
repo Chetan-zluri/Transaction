@@ -201,7 +201,7 @@ export const processCSV = async (rows: any[]) => {
   if (transactions.length > 0) {
     await em.persistAndFlush(transactions);
   }
-
+  console.log("duplicateRows", duplicateRows);
   return {
     message: "CSV file processed successfully",
     transactions,
